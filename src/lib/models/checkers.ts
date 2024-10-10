@@ -2,6 +2,19 @@ import type { Capture } from "./capture";
 import type { Move } from "./move";
 import { Piece } from "./piece";
 
+const customBoard: number[][] = [
+	[0, 0, 0, 0, 0, 0, 0, 0],
+	[0, 0, 0, 0, 0, 0, 2, 0],
+	[0, 0, 0, 0, 0, 0, 0, 0],
+	[0, 0, 0, 0, 0, 0, 0, 0],
+	[0, 0, 0, 0, 0, 0, 0, 0],
+	[2, 0, 2, 0, 2, 0, 2, 0],
+	[0, 2, 0, 2, 0, 2, 0, 2],
+	[2, 0, 2, 0, 2, 0, 2, 0]
+];
+
+const DRAW_MAX = 10;
+
 export class Checkers {
 	board: (Piece | null)[][];
 	current_player: "white" | "black";
@@ -15,6 +28,9 @@ export class Checkers {
 	captures: Capture[];
 	capture_allowed: boolean;
 	active_capture_piece: Piece | null;
+
+	captureMoves: number[][];
+	drawCount: number;
 
 	active_move_piece: Piece | null;
 	moves: Move[];
@@ -35,6 +51,9 @@ export class Checkers {
 		this.capture_allowed = true;
 		this.active_capture_piece = null;
 
+		this.captureMoves = [];
+		this.drawCount = 0;
+
 		this.active_move_piece = null;
 		this.moves = [];
 		this.move_allowed = true;
@@ -46,32 +65,46 @@ export class Checkers {
 		const board: (Piece | null)[][] = Array(8)
 			.fill(null)
 			.map(() => Array(8).fill(null));
-		for (let row = 0; row < 3; row++) {
+
+		customBoard.forEach((row, r) => {
+			row.forEach((value, c) => {
+				if (value !== 0) {
+					board[r][c] = new Piece(value === 1 ? "white" : "black", [r, c]);
+					this.promotePiece(board[r][c]);
+				}
+			});
+		});
+
+		/*for (let row = 0; row < 3; row++) {
 			for (let col = 0; col < 8; col += 2) {
 				const [r, c] = [row, col + ((row + 1) % 2)];
 				board[r][c] = new Piece("white", [r, c]);
+				this.promotePiece(board[r][c]);
 			}
 		}
 		for (let row = 5; row < 8; row++) {
 			for (let col = 0; col < 8; col += 2) {
 				const [r, c] = [row, col + ((row - 1) % 2)];
 				board[r][c] = new Piece("black", [r, c]);
+				this.promotePiece(board[r][c]);
 			}
-		}
+		}*/
 		return board;
 	}
 
 	updateCursorLog(position: number[]) {
-		if (this.cursor_log.length) {
-			if (this.cursor_log[this.cursor_log.length - 1].toString() !== position.toString()) {
-				this.cursor_log.push(position);
-			} else {
-				if (!this.in_capture_state) {
-					this.cursor_log.length = 0;
+		if (!this.game_over) {
+			if (this.cursor_log.length) {
+				if (this.cursor_log[this.cursor_log.length - 1].toString() !== position.toString()) {
+					this.cursor_log.push(position);
+				} else {
+					if (!this.in_capture_state) {
+						this.cursor_log.length = 0;
+					}
 				}
+			} else {
+				this.cursor_log.push(position);
 			}
-		} else {
-			this.cursor_log.push(position);
 		}
 	}
 
@@ -125,10 +158,42 @@ export class Checkers {
 				}
 			});
 		});
+	}
+
+	// game over if a player has no moves to make
+	movesStatus() {
 		if (this.moves.length === 0) {
 			this.game_over = true;
 		}
+		// this.boardStatus()
 	}
+
+	// game over if a player has no pieces left
+	boardStatus() {
+		let playersHavePieces = false;
+		this.board.forEach((row) => {
+			row.forEach((piece) => {
+				if (piece) {
+					if (piece.color === "black" || piece.color === 'white') {
+						playersHavePieces = true;
+					}
+				}
+			});
+		});
+		if (!playersHavePieces) {
+			this.game_over = true;
+		}
+	}
+
+	// draw if no capture or promotion made
+	lazyDraw() {
+		if (this.drawCount === DRAW_MAX) {
+			this.game_over = true;
+		}
+	}
+
+	// draw if there are only two piece left and drawCount === 10
+	drawByTime() {}
 
 	kingMoves(piece: Piece) {
 		const [row, col] = piece.position;
@@ -193,6 +258,8 @@ export class Checkers {
 						if (move.end.toString() === [row, col].toString()) {
 							move.piece.position = [row, col];
 							this.board[row][col] = move.piece;
+
+							this.promotePiece(move.piece);
 
 							this.board[r][c] = null;
 							this.moves.length = 0;
@@ -374,6 +441,41 @@ export class Checkers {
 		}
 	}
 
+	generateCaptureMoves() {
+		if (this.must_capture) {
+			this.captureMoves.length = 0;
+			const tempCaptureSet: Set<string> = new Set();
+
+			const isCapture = this.captures.find(
+				(capture) => capture.start.toString() === this.selected_square.toString()
+			);
+
+			if (isCapture) {
+				this.captures.forEach((capture) => {
+					if (capture.start.toString() === this.selected_square.toString()) {
+						tempCaptureSet.add(capture.end.toString());
+					}
+				});
+
+				const findChainedCaptures = (moves: Set<string>) => {
+					moves.forEach((move) => {
+						this.captures.forEach((capture) => {
+							if (capture.start.toString() === move) {
+								tempCaptureSet.add(capture.end.toString());
+							}
+						});
+					});
+				};
+
+				findChainedCaptures(tempCaptureSet);
+			}
+
+			if (tempCaptureSet.size !== 0) {
+				this.captureMoves = Array.from(tempCaptureSet, (item) => item.split(",").map(Number));
+			}
+		}
+	}
+
 	capturePiece() {
 		if (this.must_capture) {
 			if (this.cursor_log.length > 1) {
@@ -401,12 +503,15 @@ export class Checkers {
 						);
 					}
 				}
+
 				if (capture_piece) {
 					const first_capture = [capture_piece.end];
 
 					this.board[capture_piece.fallen.position[0]][capture_piece.fallen.position[1]] = null;
 					capture_piece.piece.position = [new_row, new_col];
 					this.board[new_row][new_col] = capture_piece.piece;
+					this.board[old_row][old_col] = null;
+					this.drawCount = 0;
 
 					const clear_current_capture = () => {
 						this.must_capture = false;
@@ -414,8 +519,10 @@ export class Checkers {
 						this.cursor_log.length = 0;
 						this.selected_square.length = 0;
 						this.clearCaptures();
+						this.promotePiece(capture_piece.piece);
 						this.switchTurn();
 						this.capture_allowed = true;
+						this.captureMoves.length = 0;
 					};
 
 					const moves = [];
@@ -428,11 +535,12 @@ export class Checkers {
 							moves.push(first_capture);
 						}
 					});
+
 					if (moves.length !== 0) {
 						this.in_capture_state = true;
 						this.cursor_log = [[new_row, new_col]];
 						this.selected_square = [new_row, new_col];
-						this.active_capture_piece = capture_piece.piece
+						this.active_capture_piece = capture_piece.piece;
 						this.capture_allowed = true;
 					} else {
 						clear_current_capture();
@@ -451,6 +559,21 @@ export class Checkers {
 					this.capture_allowed = true;
 				}
 			}
+		}
+	}
+
+	promotePiece(piece: Piece) {
+		if (!piece.is_king) {
+			if (piece.color === "white") {
+				if (piece.position[0] === 7) {
+					piece.updateKing();
+				}
+			} else {
+				if (piece.position[0] === 0) {
+					piece.updateKing();
+				}
+			}
+			this.drawCount = 0;
 		}
 	}
 
