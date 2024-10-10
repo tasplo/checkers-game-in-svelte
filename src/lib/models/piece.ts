@@ -9,7 +9,7 @@ export class Piece {
 		this.position = position;
 	}
 
-	promotePice() {
+	updateKing() {
 		this.is_king = true;
 	}
 }
