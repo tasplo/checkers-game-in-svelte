@@ -6,23 +6,33 @@
 
 	$: board = $game.board;
 
+
+	// $: if (!$game.game_over) {
+	// 	if ($game.moves.length !== 0) {
+	// 		$game.boardStatus();
+	// 	}
+	// }
+
 	$: if (!$game.game_over) {
 		if ($game.capture_allowed) {
 			$game.generateCaptures();
 		}
 		if (!$game.capture_allowed && $game.move_allowed && !$game.must_capture) {
 			$game.generateMoves();
+			$game.movesStatus();
 		}
 	}
 
 	function handleClick(row: number, col: number): void {
-		game.update((game) => {
-			game.updateCursorLog([row, col]);
-			game.selectSquare();
-			game.movePiece();
-			game.capturePiece()
-			return game;
-		});
+		if (!$game.game_over) {
+			game.update((game) => {
+				game.updateCursorLog([row, col]);
+				game.selectSquare();
+				game.movePiece();
+				game.capturePiece();
+				return game;
+			});
+		}
 	}
 
 	$: highlight = (row: number, col: number) => {
@@ -35,8 +45,12 @@
 		return "";
 	};
 
+	$: if ($game.selected_square.length) {
+		$game.generateCaptureMoves();
+	}
+
 	$: {
-		console.log($game)
+		console.log($game);
 	}
 </script>
 
